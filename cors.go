@@ -13,16 +13,23 @@ import (
 	"sync"
 )
 
+// Sites provides the origin check for Cors
+type Sites interface {
+	// SetContext return boolean indicating if origin is known.
+	// It may set site in request context if required
+	SetContext(string, martini.Context) bool
+}
+
 // Cors type allows configuration of CORS handling
 type Cors struct {
-	// Allowed origins. Please use write mutex if updating while live.
-	OriginsMutex sync.RWMutex
-	Origins      map[string]struct{} // Go really needs sugar for sets
+	// Allowed origins is now provided through an interface
+	Origins Sites
 	// CORS headers. Please use write mutex if updating while live.
 	HeadersMutex sync.RWMutex
 	Headers      map[string]string
 	// Default is to return 403 if Origin not a match. Set to true to disable.
 	Tolerant bool
+	DevKey   string
 }
 
 // StandardHeaders are not really a standard. Customised headers should be provided.
@@ -34,22 +41,28 @@ var StandardHeaders = map[string]string{
 
 // Middleware checks the Origin header on requests and adds appropriate CORS headers to
 // the response.
-func (cors *Cors) MiddleWare(w http.ResponseWriter, r *http.Request) {
+func (cors *Cors) MiddleWare(w http.ResponseWriter, r *http.Request, ctx martini.Context) {
+	var origin string
 
-	origin := r.Header.Get("Origin")
+	// Postman can't set Origin headers so I test with this
+	if cors.DevKey != "" && r.Header.Get("X-Dev") == cors.DevKey {
+		origin = r.Header.Get("X-Origin")
+	} else {
+		origin = r.Header.Get("Origin")
+	}
 
-	// Possibly a same origin request. Not CORS.
 	if len(origin) == 0 {
 		return
 	}
 
 	// Set Access-Control-Allow-Origin
 	h := w.Header()
-	originOk := cors.setOrigin(h, origin)
+	originOk := cors.setOrigin(h, origin, ctx)
 
 	// Conditionally set 403 if Origin was not a match
 	if !originOk && !cors.Tolerant {
 		w.WriteHeader(http.StatusForbidden)
+		return
 	}
 
 }
@@ -79,7 +92,7 @@ func (cors *Cors) NotFound(w http.ResponseWriter, r *http.Request, routes martin
 
 }
 
-func (cors *Cors) setOrigin(h http.Header, origin string) bool {
+func (cors *Cors) setOrigin(h http.Header, origin string, ctx martini.Context) bool {
 
 	// Block empty or nonexistent Origin headers
 	if origin == "" {
@@ -87,17 +100,14 @@ func (cors *Cors) setOrigin(h http.Header, origin string) bool {
 	}
 
 	// Reader lock so we can change the map dynamically
-	cors.OriginsMutex.RLock()
-	defer cors.OriginsMutex.RUnlock()
-
 	// Empty Origins map allows all domains
-	if len(cors.Origins) == 0 {
+	if cors.Origins == nil {
 		h.Set("Access-Control-Allow-Origin", "*")
 		return true
 	}
 
 	// Allow request if Origin in map
-	if _, ok := cors.Origins[origin]; ok {
+	if ok := cors.Origins.SetContext(origin, ctx); ok {
 		h.Set("Access-Control-Allow-Origin", origin)
 		return true
 	}
