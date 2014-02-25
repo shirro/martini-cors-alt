@@ -51,10 +51,6 @@ func (cors *Cors) MiddleWare(w http.ResponseWriter, r *http.Request, ctx martini
 		origin = r.Header.Get("Origin")
 	}
 
-	if len(origin) == 0 {
-		return
-	}
-
 	// Set Access-Control-Allow-Origin
 	h := w.Header()
 	originOk := cors.setOrigin(h, origin, ctx)
@@ -93,11 +89,6 @@ func (cors *Cors) NotFound(w http.ResponseWriter, r *http.Request, routes martin
 }
 
 func (cors *Cors) setOrigin(h http.Header, origin string, ctx martini.Context) bool {
-
-	// Block empty or nonexistent Origin headers
-	if origin == "" {
-		return false
-	}
 
 	// Reader lock so we can change the map dynamically
 	// Empty Origins map allows all domains

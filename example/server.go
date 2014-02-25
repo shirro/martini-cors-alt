@@ -33,9 +33,9 @@ func main() {
 	}
 
 	myCors := &cors.Cors{
-		Origins:  myOrigins,
-		Headers:  cors.StandardHeaders,
-		Tolerant: true,
+		Origins: myOrigins,
+		Headers: cors.StandardHeaders,
+		//		Tolerant: true,
 	}
 
 	m.Use(myCors.MiddleWare)
