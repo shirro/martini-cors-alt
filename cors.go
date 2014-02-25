@@ -23,28 +23,33 @@ type Sites interface {
 // Cors type allows configuration of CORS handling
 type Cors struct {
 	// Allowed origins is now provided through an interface
+	// for more flexibility
 	Origins Sites
 	// CORS headers. Please use write mutex if updating while live.
 	HeadersMutex sync.RWMutex
-	Headers      map[string]string
+	// Can use cors.StandardHeaders or provide your own
+	Headers map[string]string
 	// Default is to return 403 if Origin not a match. Set to true to disable.
 	Tolerant bool
-	DevKey   string
+	// This is a key to allow overriding Origin with an X-Origin for tools
+	// that don't support setting Origin headers eg Postman on a chromebook.
+	// Not for production use. Header is called X-Dev
+	DevKey string
 }
 
-// StandardHeaders are not really a standard. Customised headers should be provided.
+// StandardHeaders are an example.
 var StandardHeaders = map[string]string{
 	"Access-Control-Max-Age":        "86000",
 	"Access-Control-Allow-Headers":  "Content-Type, Origin, Authorization",
 	"Access-Control-Expose-Headers": "Content-Length",
 }
 
-// Middleware checks the Origin header on requests and adds appropriate CORS headers to
-// the response.
+// Middleware checks the Origin header on requests and adds appropriate CORS
+// headers to the response.
 func (cors *Cors) MiddleWare(w http.ResponseWriter, r *http.Request, ctx martini.Context) {
 	var origin string
 
-	// Postman can't set Origin headers so I test with this
+	// Postman can't set Origin headers without using a proxy
 	if cors.DevKey != "" && r.Header.Get("X-Dev") == cors.DevKey {
 		origin = r.Header.Get("X-Origin")
 	} else {
@@ -90,14 +95,15 @@ func (cors *Cors) NotFound(w http.ResponseWriter, r *http.Request, routes martin
 
 func (cors *Cors) setOrigin(h http.Header, origin string, ctx martini.Context) bool {
 
-	// Reader lock so we can change the map dynamically
-	// Empty Origins map allows all domains
+	// If Origins has not been set we allow all origins
 	if cors.Origins == nil {
 		h.Set("Access-Control-Allow-Origin", "*")
 		return true
 	}
 
-	// Allow request if Origin in map
+	// If Origins exists we ask the Sites interface
+	// to setup the request context. It returns true
+	// if the origin is valid.
 	if ok := cors.Origins.SetContext(origin, ctx); ok {
 		h.Set("Access-Control-Allow-Origin", origin)
 		return true
